@@ -7,3 +7,5 @@ datasets/tiny-imagenet*
 datasets/imagenet_wnid.txt
 datasets/tiny-imagenet-200.zip
 models/
+guided_diffusion.egg-info
+diffusion_commands.sh
