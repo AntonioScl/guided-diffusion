@@ -19,12 +19,14 @@ from guided_diffusion.script_util import (
     args_to_dict,
 )
 from guided_diffusion.image_datasets import load_data
+import datetime
+import pickle
 
 def main():
     args = create_argparser().parse_args()
 
     dist_util.setup_dist()
-    logger.configure()
+    logger.configure(dir=args.out_dir)
 
     logger.log("creating model and diffusion...")
     model, diffusion = create_model_and_diffusion(
@@ -124,6 +126,11 @@ def main():
     arr_noisy = np.concatenate(all_noisy_images, axis=0)
     arr_noisy = arr_noisy[: args.num_samples]
     if dist.get_rank() == 0:
+        # Save the arguments of the run
+        out_args = os.path.join(logger.get_dir(), "args.pk")
+        logger.log(f"saving args to {out_args}")
+        with open(out_args, 'wb') as handle: pickle.dump(args, handle)
+        # Save the data of the run
         shape_str = "x".join([str(x) for x in arr.shape])
         out_path = os.path.join(logger.get_dir(), f"samples_{shape_str}.npz")
         logger.log(f"saving to {out_path}")
@@ -146,8 +153,12 @@ def create_argparser():
     )
     defaults.update(model_and_diffusion_defaults())
     defaults.update(dict(
-        data_dir =  'datasets/imagenet64_startingImgs',
         step_reverse = 100,
+        data_dir =  'datasets/imagenet64_startingImgs',
+        out_dir  =  os.path.join(os.getcwd(),
+             'results',
+             'forw_back',
+             datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S-%f")),
     ))
     parser = argparse.ArgumentParser()
     add_dict_to_argparser(parser, defaults)
