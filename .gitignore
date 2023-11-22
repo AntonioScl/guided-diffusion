@@ -1,3 +1,9 @@
 .DS_Store
 __pycache__/
 classify_image_graph_def.pb
+results/
+datasets/imagenet*
+datasets/tiny-imagenet*
+datasets/imagenet_wnid.txt
+datasets/tiny-imagenet-200.zip
+models/
