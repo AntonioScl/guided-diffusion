@@ -18,13 +18,14 @@ from guided_diffusion.script_util import (
     args_to_dict,
     add_dict_to_argparser,
 )
+import datetime
 
 
 def main():
     args = create_argparser().parse_args()
 
     dist_util.setup_dist()
-    logger.configure()
+    logger.configure(dir=args.output)
 
     logger.log("creating model...")
     model, diffusion = sr_create_model_and_diffusion(
@@ -110,6 +111,12 @@ def create_argparser():
         model_path="",
     )
     defaults.update(sr_model_and_diffusion_defaults())
+    defaults.update(dict(
+        output  =  os.path.join(os.getcwd(),
+             'results',
+             'upsampling',
+             datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S-%f")),
+    ))
     parser = argparse.ArgumentParser()
     add_dict_to_argparser(parser, defaults)
     return parser
