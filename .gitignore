@@ -10,3 +10,4 @@ models/
 guided_diffusion.egg-info
 diffusion_commands.sh
 datasets/upsampling/*
+smooth_upsample.sh
