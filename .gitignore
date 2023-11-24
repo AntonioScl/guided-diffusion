@@ -9,3 +9,4 @@ datasets/tiny-imagenet-200.zip
 models/
 guided_diffusion.egg-info
 diffusion_commands.sh
+datasets/upsampling/*
