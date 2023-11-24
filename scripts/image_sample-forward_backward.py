@@ -26,7 +26,7 @@ def main():
     args = create_argparser().parse_args()
 
     dist_util.setup_dist()
-    logger.configure(dir=args.out_dir)
+    logger.configure(dir=args.output)
 
     logger.log("creating model and diffusion...")
     model, diffusion = create_model_and_diffusion(
@@ -155,7 +155,7 @@ def create_argparser():
     defaults.update(dict(
         step_reverse = 100,
         data_dir =  'datasets/imagenet64_startingImgs',
-        out_dir  =  os.path.join(os.getcwd(),
+        output  =  os.path.join(os.getcwd(),
              'results',
              'forw_back',
              datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S-%f")),
