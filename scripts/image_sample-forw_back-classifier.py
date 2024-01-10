@@ -30,34 +30,6 @@ def main():
     dist_util.setup_dist()
     logger.configure(dir=args.output)
 
-    logger.log("creating model and diffusion...")
-    model, diffusion = create_model_and_diffusion(
-        **args_to_dict(args, model_and_diffusion_defaults().keys())
-    )
-    model.load_state_dict(
-        dist_util.load_state_dict(args.model_path, map_location="cpu")
-    )
-    model.to(dist_util.dev())
-    if args.use_fp16:
-        model.convert_to_fp16()
-    model.eval()
-
-    logger.log("loading classifier...")
-    classifier = create_classifier(**args_to_dict(args, classifier_defaults().keys()))
-    classifier.load_state_dict(
-        dist_util.load_state_dict(args.classifier_path, map_location="cpu")
-    )
-    classifier.to(dist_util.dev())
-    if args.classifier_use_fp16:
-        classifier.convert_to_fp16()
-    classifier.eval()
-
-    def class_eval(x, t=0.0):
-        with th.no_grad():
-            logits = classifier(x, t)
-            # log_probs = F.log_softmax(logits, dim=-1)
-            return logits
-
     logger.log("creating data loader...")
     data_start = load_data(
         data_dir=args.data_dir,
@@ -69,7 +41,6 @@ def main():
         random_flip=False,
     )
 
-    logger.log("sampling...")
     all_images = []
     all_logits_samples = []
     all_labels = []
@@ -78,16 +49,28 @@ def main():
     all_noisy_images = []
     all_logits_noisy = []
     while len(all_images) * args.batch_size < args.num_samples:
+        logger.log("creating model and diffusion...")
+        model, diffusion = create_model_and_diffusion(
+            **args_to_dict(args, model_and_diffusion_defaults().keys())
+        )
+        model.load_state_dict(
+            dist_util.load_state_dict(args.model_path, map_location="cpu")
+        )
+        model.to(dist_util.dev())
+        if args.use_fp16:
+            model.convert_to_fp16()
+        model.eval()
+
         batch_start, extra = next(data_start)
-
         labels_start = extra["y"].to(dist_util.dev())
-
         batch_start = batch_start.to(dist_util.dev())
-        class_eval_start = class_eval(batch_start)
+        # class_eval_start = class_eval(batch_start)
+
+        logger.log("sampling...")
         # Sample noisy images from the diffusion process at time t_reverse given by the step_reverse argument
         t_reverse = diffusion._scale_timesteps(th.tensor([args.step_reverse])).to(dist_util.dev())
         batch_noisy = diffusion.q_sample(batch_start, t_reverse)
-        class_eval_noisy = class_eval(batch_noisy, t_reverse)
+        # class_eval_noisy = class_eval(batch_noisy, t_reverse)
 
         model_kwargs = {}
         if args.class_cond:
@@ -108,7 +91,35 @@ def main():
             clip_denoised=args.clip_denoised,
             model_kwargs=model_kwargs,
         )
+
+        del model, diffusion
+
+        ##Classifier part
+        logger.log("loading classifier...")
+        classifier = create_classifier(**args_to_dict(args, classifier_defaults().keys()))
+        classifier.load_state_dict(
+            dist_util.load_state_dict(args.classifier_path, map_location="cpu")
+        )
+        classifier.to(dist_util.dev())
+        if args.classifier_use_fp16:
+            classifier.convert_to_fp16()
+        classifier.eval()
+
+        def class_eval(x, t=0.0):
+            shape = x.shape
+            time = th.tensor([t] * shape[0], device=dist_util.dev())
+            with th.no_grad():
+                logits = classifier(x, time)
+                # log_probs = F.log_softmax(logits, dim=-1)
+                return logits
+
+        logger.log("evaluating classifier...")
+        class_eval_start = class_eval(batch_start)
+        class_eval_noisy = class_eval(batch_noisy, t_reverse)
         class_eval_sample = class_eval(sample, 0.0)
+
+        del classifier
+
         sample = ((sample + 1) * 127.5).clamp(0, 255).to(th.uint8)
         sample = sample.permute(0, 2, 3, 1)
         sample = sample.contiguous()
@@ -117,6 +128,7 @@ def main():
         dist.all_gather(gathered_samples, sample)  # gather not supported with NCCL
         all_images.extend([sample.cpu().numpy() for sample in gathered_samples])
         
+        class_eval_sample = class_eval_sample.contiguous()
         gathered_logits_samples = [
                 th.zeros_like(class_eval_sample) for _ in range(dist.get_world_size())
             ]
@@ -138,6 +150,7 @@ def main():
         dist.all_gather(gathered_start_samples, batch_start)  # gather not supported with NCCL
         all_start_images.extend([sample.cpu().numpy() for sample in gathered_start_samples])
         
+        class_eval_start = class_eval_start.contiguous()
         gathered_logits_start = [
                 th.zeros_like(class_eval_start) for _ in range(dist.get_world_size())
             ]
@@ -152,6 +165,7 @@ def main():
         dist.all_gather(gathered_noisy_samples, batch_noisy)  # gather not supported with NCCL
         all_noisy_images.extend([sample.cpu().numpy() for sample in gathered_noisy_samples])
 
+        class_eval_noisy = class_eval_noisy.contiguous()
         gathered_logits_noisy = [
                 th.zeros_like(class_eval_noisy) for _ in range(dist.get_world_size())
             ]
@@ -202,6 +216,7 @@ def create_argparser():
         model_path="",
     )
     defaults.update(model_and_diffusion_defaults())
+    defaults.update(classifier_defaults())
     defaults.update(dict(
         step_reverse = 100,
         classifier_path = 'models/64x64_classifier.pt',
