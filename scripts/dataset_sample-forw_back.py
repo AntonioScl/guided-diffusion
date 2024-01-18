@@ -21,9 +21,10 @@ from guided_diffusion.script_util import (
 from guided_diffusion.image_datasets import load_data, _list_images_per_classes
 import datetime
 import pickle
-from torchvision.utils import save_image
+# from torchvision.utils import save_image
 from PIL import Image
 # from more_itertools import ilen
+import time
 
 def main():
     args = create_argparser().parse_args()
@@ -71,6 +72,7 @@ def main():
     # all_noisy_images = []
     genrated_samples = 0
     # batch_samples = []
+    time_start = time.time()
     while genrated_samples < num_samples:
         batch_start, extra = next(data_start)
 
@@ -142,7 +144,8 @@ def main():
         # all_noisy_images.extend([sample.cpu().numpy() for sample in gathered_noisy_samples])
 
         genrated_samples += args.batch_size * dist.get_world_size()
-        logger.log(f"created {genrated_samples} samples")
+        logger.log(f"created {genrated_samples} samples in {time.time() - time_start:.1f} seconds")
+        
 
     # arr = np.concatenate(all_images, axis=0)
     # arr = arr[: num_samples]
