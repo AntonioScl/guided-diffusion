@@ -876,7 +876,10 @@ class EncoderUNetModel(nn.Module):
         :param timesteps: a 1-D batch of timesteps.
         :return: an [N x K] Tensor of outputs.
         """
-        emb = self.time_embed(timestep_embedding(timesteps, self.model_channels))
+        # Get the device of the first input block
+        device = next(self.input_blocks[0].parameters()).device
+
+        emb = self.time_embed(timestep_embedding(timesteps, self.model_channels, device=device))
 
         results = []
         h = x.type(self.dtype)
