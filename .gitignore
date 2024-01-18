@@ -11,3 +11,5 @@ guided_diffusion.egg-info
 diffusion_commands.sh
 datasets/upsampling/*
 smooth_upsample.sh
+datasets/ILSVRC2012
+time_iterations.sh
