@@ -1,5 +1,6 @@
 import math
 import random
+import os
 
 from PIL import Image
 import blobfile as bf
@@ -19,6 +20,7 @@ def load_data(
     deterministic=False,
     random_crop=False,
     random_flip=True,
+    list_images=None,
 ):
     """
     For a dataset, create a generator over (images, kwargs) pairs.
@@ -37,10 +39,14 @@ def load_data(
     :param deterministic: if True, yield results in a deterministic order.
     :param random_crop: if True, randomly crop the images for augmentation.
     :param random_flip: if True, randomly flip the images for augmentation.
+    :param list_images: if not None, a list of image paths to use. If None, all in data_dir.
     """
     if not data_dir:
         raise ValueError("unspecified data directory")
-    all_files = _list_image_files_recursively(data_dir)
+    if list_images is not None:
+        all_files = list_images
+    else:
+        all_files = _list_image_files_recursively(data_dir)
     classes = None
     if class_cond:
         # Assume classes are the first part of the filename,
@@ -81,6 +87,33 @@ def _list_image_files_recursively(data_dir):
             results.append(full_path)
         elif bf.isdir(full_path):
             results.extend(_list_image_files_recursively(full_path))
+    return results
+
+
+def _list_images_per_classes(data_dir, num_per_class, num_classes, out_dir):
+    existing_samples = [x.split(".")[0][:-6] for x in bf.listdir(out_dir)]
+    dict_classes = {}
+    for cl in IMAGENET_CLASSES[:num_classes]: dict_classes[cl] = 0
+    for sample in existing_samples: 
+        cl = sample.split("_")[0]
+        if cl in dict_classes.keys(): dict_classes[cl] += 1
+
+    def selection_condition(entry, cla):
+        if cla in IMAGENET_CLASSES[:num_classes]:
+            return entry.split(".")[0] not in existing_samples and dict_classes[cla] < num_per_class
+        else:
+            return False
+
+    results = []
+    for entry in sorted(bf.listdir(data_dir)):
+        full_path = bf.join(data_dir, entry)
+        ext = entry.split(".")[-1]
+        cla = entry.split("_")[0]
+        if "." in entry and ext.lower() in ["jpg", "jpeg", "png", "gif"] and selection_condition(entry, cla):
+            results.append(full_path)
+            dict_classes[cla] += 1
+        elif bf.isdir(full_path):
+            results.extend(_list_images_per_classes(full_path, num_per_class, num_classes, out_dir))
     return results
 
 
@@ -125,6 +158,7 @@ class ImageDataset(Dataset):
         out_dict = {}
         if self.local_classes is not None:
             out_dict["y"] = np.array(self.local_classes[idx], dtype=np.int64)
+        out_dict["img_name"]  = os.path.split(path)[-1] 
         return np.transpose(arr, [2, 0, 1]), out_dict
 
 
