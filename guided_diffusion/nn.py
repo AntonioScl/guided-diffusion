@@ -100,7 +100,7 @@ def normalization(channels):
     return GroupNorm32(32, channels)
 
 
-def timestep_embedding(timesteps, dim, max_period=10000):
+def timestep_embedding(timesteps, dim, max_period=10000, device=None):
     """
     Create sinusoidal timestep embeddings.
 
@@ -108,12 +108,15 @@ def timestep_embedding(timesteps, dim, max_period=10000):
                       These may be fractional.
     :param dim: the dimension of the output.
     :param max_period: controls the minimum frequency of the embeddings.
+    :device: the device to create the embeddings on. If None, use the timesteps.device
     :return: an [N x dim] Tensor of positional embeddings.
     """
+    if device is None: device = timesteps.device
+
     half = dim // 2
     freqs = th.exp(
         -math.log(max_period) * th.arange(start=0, end=half, dtype=th.float32) / half
-    ).to(device=timesteps.device)
+    ).to(device=device)
     args = timesteps[:, None].float() * freqs[None]
     embedding = th.cat([th.cos(args), th.sin(args)], dim=-1)
     if dim % 2:
