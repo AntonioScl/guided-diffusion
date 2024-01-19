@@ -83,6 +83,7 @@ def main():
         t_reverse = diffusion._scale_timesteps(th.tensor([args.step_reverse])).to(dist_util.dev())
         # t_reverse = t_reverse.to(dist_util.dev())
         batch_noisy = diffusion.q_sample(batch_start, t_reverse)
+        logger.log("completed forward diffusion...")
 
         model_kwargs = {}
         if args.class_cond:
@@ -103,6 +104,7 @@ def main():
             clip_denoised=args.clip_denoised,
             model_kwargs=model_kwargs,
         )
+        logger.log("completed backward diffusion...")
         sample = ((sample + 1) * 127.5).clamp(0, 255).to(th.uint8)
         sample = sample.permute(0, 2, 3, 1)
         sample = sample.contiguous()
