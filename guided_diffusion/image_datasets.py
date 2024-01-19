@@ -21,6 +21,7 @@ def load_data(
     random_crop=False,
     random_flip=True,
     list_images=None,
+    drop_last = True,
 ):
     """
     For a dataset, create a generator over (images, kwargs) pairs.
@@ -66,13 +67,14 @@ def load_data(
         random_crop=random_crop,
         random_flip=random_flip,
     )
+
     if deterministic:
         loader = DataLoader(
-            dataset, batch_size=batch_size, shuffle=False, num_workers=1, drop_last=True
+            dataset, batch_size=batch_size, shuffle=False, num_workers=1, drop_last=drop_last
         )
     else:
         loader = DataLoader(
-            dataset, batch_size=batch_size, shuffle=True, num_workers=1, drop_last=True
+            dataset, batch_size=batch_size, shuffle=True, num_workers=1, drop_last=drop_last
         )
     while True:
         yield from loader

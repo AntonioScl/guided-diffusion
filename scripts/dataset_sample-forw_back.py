@@ -60,6 +60,7 @@ def main():
         random_crop=False,
         random_flip=False,
         list_images=list_images,
+        drop_last=False,   # It is important when batch_size < num_samples, otherwise it doesn't yield
     )
 
     # num_samples = len(num_samples)
@@ -75,12 +76,14 @@ def main():
     time_start = time.time()
     while genrated_samples < num_samples:
         batch_start, extra = next(data_start)
+        logger.log(f"batch loaded: {batch_start.shape}")
 
         labels_start = extra["y"].to(dist_util.dev())
         batch_start  = batch_start.to(dist_util.dev())
         img_names    = extra["img_name"]
         # Sample noisy images from the diffusion process at time t_reverse given by the step_reverse argument
         t_reverse = diffusion._scale_timesteps(th.tensor([args.step_reverse])).to(dist_util.dev())
+        logger.log(f"reverse diffusion at time {t_reverse.item()}")
         # t_reverse = t_reverse.to(dist_util.dev())
         batch_noisy = diffusion.q_sample(batch_start, t_reverse)
         logger.log("completed forward diffusion...")
