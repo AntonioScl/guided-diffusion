@@ -83,7 +83,6 @@ def main():
         img_names    = extra["img_name"]
         # Sample noisy images from the diffusion process at time t_reverse given by the step_reverse argument
         t_reverse = diffusion._scale_timesteps(th.tensor([args.step_reverse])).to(dist_util.dev())
-        logger.log(f"reverse diffusion at time {t_reverse.item()}")
         # t_reverse = t_reverse.to(dist_util.dev())
         batch_noisy = diffusion.q_sample(batch_start, t_reverse)
         logger.log("completed forward diffusion...")
