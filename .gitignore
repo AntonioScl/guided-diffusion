@@ -13,3 +13,5 @@ datasets/upsampling/*
 smooth_upsample.sh
 datasets/ILSVRC2012
 time_iterations.sh
+*.sh
+slurm*

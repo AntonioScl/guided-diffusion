@@ -71,12 +71,12 @@ def main():
     # all_labels = []
     # all_start_images = []
     # all_noisy_images = []
-    genrated_samples = 0
+    generated_samples = 0
     # batch_samples = []
     time_start = time.time()
-    while genrated_samples < num_samples:
+    while generated_samples < num_samples:
         batch_start, extra = next(data_start)
-        logger.log(f"batch loaded: {batch_start.shape}")
+        # logger.log(f"batch loaded: {batch_start.shape}")
 
         labels_start = extra["y"].to(dist_util.dev())
         batch_start  = batch_start.to(dist_util.dev())
@@ -84,7 +84,7 @@ def main():
         # Sample noisy images from the diffusion process at time t_reverse given by the step_reverse argument
         t_reverse = diffusion._scale_timesteps(th.tensor([args.step_reverse])).to(dist_util.dev())
         # t_reverse = t_reverse.to(dist_util.dev())
-        batch_noisy = diffusion.q_sample(batch_start, t_reverse)
+        batch_noisy = diffusion.q_sample(batch_start, t_reverse) if args.step_reverse<int(args.timestep_respacing) else th.randn(batch_start.shape, device=dist_util.dev())
         logger.log("completed forward diffusion...")
 
         model_kwargs = {}
@@ -100,7 +100,7 @@ def main():
         )
         sample = sample_fn(
             model,
-            (args.batch_size, 3, args.image_size, args.image_size),
+            (len(batch_start), 3, args.image_size, args.image_size),
             step_reverse = args.step_reverse,  # step when to reverse the diffusion process
             noise=batch_noisy,
             clip_denoised=args.clip_denoised,
@@ -119,6 +119,9 @@ def main():
             img.save(os.path.join(output_images, name))
             # save_image(sample[ii], os.path.join(output_images, name))
             # save_image(sample[ii], os.path.join(output_images, name), normalize=True, range=(-1, 1))
+
+        sample_size = th.tensor(len(sample)).to(dist_util.dev())
+        dist.all_reduce(sample_size, op=dist.ReduceOp.SUM)
 
         # gathered_samples = [th.zeros_like(sample) for _ in range(dist.get_world_size())]
         # dist.all_gather(gathered_samples, sample)  # gather not supported with NCCL
@@ -147,8 +150,10 @@ def main():
         # dist.all_gather(gathered_noisy_samples, batch_noisy)  # gather not supported with NCCL
         # all_noisy_images.extend([sample.cpu().numpy() for sample in gathered_noisy_samples])
 
-        genrated_samples += args.batch_size * dist.get_world_size()
-        logger.log(f"created {genrated_samples} samples in {time.time() - time_start:.1f} seconds")
+        sample_size = th.tensor(len(sample)).to(dist_util.dev())
+        dist.all_reduce(sample_size, op=dist.ReduceOp.SUM)
+        generated_samples += sample_size.item()
+        logger.log(f"created {generated_samples} samples in {time.time() - time_start:.1f} seconds")
         
 
     # arr = np.concatenate(all_images, axis=0)
@@ -166,6 +171,11 @@ def main():
         out_args = os.path.join(args.output, f"t_{args.step_reverse}_{args.timestep_respacing}_args_{date_time}.pk")
         logger.log(f"saving args to {out_args}")
         with open(out_args, 'wb') as handle: pickle.dump(args, handle)
+
+        # Save the time it took to generate the samples
+        out_time = os.path.join(args.output, f"t_{args.step_reverse}_{args.timestep_respacing}_timing.txt")
+        with open(out_time, 'a') as f: f.write(f"{generated_samples} \t {time.time() - time_start:.3f}\n")
+
         # # Save the data of the run
         # shape_str = "x".join([str(x) for x in arr.shape])
         # out_path = os.path.join(logger.get_dir(), f"samples_{shape_str}.npz")
@@ -199,6 +209,10 @@ def create_argparser():
     ))
     parser = argparse.ArgumentParser()
     add_dict_to_argparser(parser, defaults)
+
+    assert parser.parse_args().step_reverse >= 0, "step_reverse must be positive"
+    assert parser.parse_args().step_reverse <= int(parser.parse_args().timestep_respacing), "step_reverse must be smaller than or equal to timestep_respacing"
+ 
     return parser
 
 
