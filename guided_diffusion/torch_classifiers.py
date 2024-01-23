@@ -1,26 +1,26 @@
 # from torchvision.io import read_image
-from torchvision.models import resnet50, ResNet50_Weights
+from torchvision.models import resnet50, ResNet50_Weights, vit_b_16, ViT_B_16_Weights
 import torch as th
 
 def load_classifier(classifier_name='resnet50'):
-    # img = read_image("test/assets/encode_jpeg/grace_hopper_517x606.jpg")
-
-    # Step 1: Initialize model with the best available weights
-    weights = ResNet50_Weights.DEFAULT
-    model = resnet50(weights=weights)
-    model.eval()
-
-    # Step 2: Initialize the inference transforms
+    if classifier_name == 'resnet50':
+        weights = ResNet50_Weights.DEFAULT
+        model = resnet50(weights=weights)
+        model.eval()
+        module_names = ['layer1.0', 'layer1.1', 'layer1.2', 'layer2.0', 'layer2.1', 'layer2.2', 'layer2.3', 'layer3.0', 'layer3.1', 'layer3.2', 'layer3.3', 'layer3.4', 'layer3.5', 'layer4.0', 'layer4.1', 'layer4.2', 'fc']
+    elif classifier_name == 'vit_b_16':
+        weights = ViT_B_16_Weights.IMAGENET1K_SWAG_E2E_V1
+        model   = vit_b_16(weights=weights)
+        model.eval()
+        module_names = []
+    else:
+        raise f"Classifier {classifier_name} not implemented"
+    
     preprocess = weights.transforms()
     def preprocess(img):
         img = ((img + 1) * 127.5).clamp(0, 255).to(th.uint8)
         model_preprocess = weights.transforms()
         return model_preprocess(img)
-
-    # Step 3: Apply inference preprocessing transforms
-    # batch = preprocess(img).unsqueeze(0)
-
-    module_names = ['layer1.0', 'layer1.1', 'layer1.2', 'layer2.0', 'layer2.1', 'layer2.2', 'layer2.3', 'layer3.0', 'layer3.1', 'layer3.2', 'layer3.3', 'layer3.4', 'layer3.5', 'layer4.0', 'layer4.1', 'layer4.2', 'fc']
 
     return model, preprocess, module_names
 

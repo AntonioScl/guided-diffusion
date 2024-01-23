@@ -73,9 +73,8 @@ def main():
         hook = layer.register_forward_hook(get_activation(layer_name))
         hooks.append(hook)
 
-
-    time_series  = [25, 50, 100, 125, 150, 175, 200, 225, 250]
-    for time_step in time_series:
+    # Time steps to evaluate
+    for time_step in args.time_series:
 
         # Load starting data
         name_at_time_step = f"t_{time_step}_{args.timestep_respacing}_images"
@@ -189,6 +188,7 @@ def main():
                 'logits_start': all_logits_start,
                 'logits_sample': all_logits_sample,
             }, handle)
+    ## End of time steps loop
 
     # Clean up
     for hook in hooks:
@@ -214,17 +214,10 @@ def create_argparser():
                     'classifier_statistics',
                     'resnet50'),
     )
-    # defaults.update(dict(
-    #     step_reverse = 100,
-    #     classifier_path = 'models/64x64_classifier.pt',
-    #     data_dir =  'datasets/imagenet64_startingImgs',
-    #     output  =  os.path.join(os.getcwd(),
-    #          'results',
-    #          'forw_back',
-    #          datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S-%f")),
-    # ))
+
     parser = argparse.ArgumentParser()
     add_dict_to_argparser(parser, defaults)
+    parser.add_argument('--time_series', nargs='+', type=int, default=[25, 50, 75, 100, 125, 150, 175, 200, 225, 250], help='Time steps to evaluate. Pass like: --time_series 25 50 100')
     return parser
 
 
