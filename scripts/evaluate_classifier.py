@@ -30,6 +30,7 @@ def check_same_images(list_sample, list_start):
 
 def main():
     args = create_argparser().parse_args()
+    args.output = os.path.join(args.output, args.classifier_name)
 
     dist_util.setup_dist()
     logger.configure(dir=args.output)
@@ -211,8 +212,7 @@ def create_argparser():
                     'results',
                     'diffused_ILSVRC2012_validation'),
         output  =  os.path.join(os.getcwd(),
-                    'classifier_statistics',
-                    'resnet50'),
+                    'classifier_statistics'),
     )
 
     parser = argparse.ArgumentParser()
