@@ -156,6 +156,9 @@ def create_argparser():
         output  =  os.path.join(os.getcwd(),
         'classifier_statistics')
     )
+    defaults.update(dict(
+        output = os.path.join(defaults['output'], defaults['classifier_name']),
+    ))
     # defaults.update(dict(
     #     step_reverse = 100,
     #     classifier_path = 'models/64x64_classifier.pt',
