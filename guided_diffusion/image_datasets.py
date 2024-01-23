@@ -21,7 +21,7 @@ def load_data(
     random_crop=False,
     random_flip=True,
     list_images=None,
-    drop_last = True,
+    drop_last=True,
 ):
     """
     For a dataset, create a generator over (images, kwargs) pairs.
@@ -67,14 +67,13 @@ def load_data(
         random_crop=random_crop,
         random_flip=random_flip,
     )
-
     if deterministic:
         loader = DataLoader(
-            dataset, batch_size=batch_size, shuffle=False, num_workers=1, drop_last=drop_last
+            dataset, batch_size=batch_size, shuffle=False, num_workers=1, drop_last=drop_last,
         )
     else:
         loader = DataLoader(
-            dataset, batch_size=batch_size, shuffle=True, num_workers=1, drop_last=drop_last
+            dataset, batch_size=batch_size, shuffle=True, num_workers=1, drop_last=drop_last,
         )
     while True:
         yield from loader
@@ -116,6 +115,24 @@ def _list_images_per_classes(data_dir, num_per_class, num_classes, out_dir):
             dict_classes[cla] += 1
         elif bf.isdir(full_path):
             results.extend(_list_images_per_classes(full_path, num_per_class, num_classes, out_dir))
+    return results
+
+
+def _list_starting_images(data_dir, sample_dir):
+    samples = [x.split(".")[0][:-6] for x in bf.listdir(sample_dir)]
+
+    def selection_condition(entry):
+        return entry.split(".")[0] in samples
+
+    results = []
+    for entry in sorted(bf.listdir(data_dir)):
+        full_path = bf.join(data_dir, entry)
+        ext = entry.split(".")[-1]
+        # cla = entry.split("_")[0]
+        if "." in entry and ext.lower() in ["jpg", "jpeg", "png", "gif"] and selection_condition(entry):
+            results.append(full_path)
+        elif bf.isdir(full_path):
+            results.extend(_list_starting_images(full_path, sample_dir))
     return results
 
 

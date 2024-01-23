@@ -15,16 +15,18 @@ from guided_diffusion.script_util import (
     # create_classifier,
     # classifier_defaults,
 )
-from guided_diffusion.image_datasets import load_data
+from guided_diffusion.image_datasets import load_data, _list_starting_images, _list_image_files_recursively
 from guided_diffusion.torch_classifiers import load_classifier
+import time
 
-# # Step 4: Use the model and print the predicted category
-# prediction = model(batch).squeeze(0).softmax(0)
-# class_id = prediction.argmax().item()
-# score = prediction[class_id].item()
-# category_name = weights.meta["categories"][class_id]
-# print(f"{category_name}: {100 * score:.1f}%")
 
+def check_same_images(list_sample, list_start):
+    for i in range(len(list_sample)):
+        name_sample = list_sample[i].split(".")[0][:-6]
+        name_start  = list_start[i].split(".")[0]
+        if name_sample != name_start:
+            return False
+    return True
 
 def main():
     args = create_argparser().parse_args()
@@ -32,7 +34,7 @@ def main():
     dist_util.setup_dist()
     logger.configure(dir=args.output)
 
-    classifier, preprocess, module_names = load_classifier()
+    classifier, preprocess, module_names = load_classifier(args.classifier_name)
     classifier.to(dist_util.dev())
     if args.classifier_use_fp16:
         classifier.convert_to_fp16()
@@ -44,7 +46,9 @@ def main():
             return logits
         
     #Upload activations statistics
-    file = '/home/sclocchi/guided-diffusion/results/classifier_statistics/act_stat_resnet50.pk'
+    file = os.path.join(args.output,
+        f'act_stat_{args.classifier_name}.pk')
+
     with open(file,'rb') as f: act_stat = pickle.load(f)
     activations_mean = act_stat['activations_mean']
     activations_var = act_stat['activations_var']
@@ -55,12 +59,6 @@ def main():
     def whiten_act(aa):
         for key in activations_mean.keys():
             aa[key] = (aa[key] - activations_mean[key]) / th.sqrt(activations_var[key] + 1e-8)
-            # if activations_mean[key].ndim>1:
-            #     flag = activations_var[key] != 0.0
-            #     expanded_flag = flag.expand_as(aa[key]) 
-            #     aa[key][flag] = (aa[key][expanded_flag] - activations_mean[key][flag]) / th.sqrt(activations_var[key][flag] + 1e-8)
-            # else:
-            #     aa[key] = (aa[key] - activations_mean[key]) / th.sqrt(activations_var[key] + 1e-8)
         return aa
 
     activations = {}
@@ -76,53 +74,121 @@ def main():
         hooks.append(hook)
 
 
-
-    # data = load_data(
-    #     data_dir=args.data_dir,
-    #     batch_size=args.batch_size,
-    #     image_size=args.image_size,
-    #     deterministic=True,
-    #     class_cond=True,
-    #     random_crop=False,
-    #     random_flip=False,
-    # )
-
-    def process(X):
-        return X/127.5 - 1.0
-
-    time_series = [75, 100, 125, 150, 175, 200, 225, 249]
+    time_series  = [25, 50, 100, 125, 150, 175, 200, 225, 250]
     for time_step in time_series:
-        # file_data = f'/home/sclocchi/guided-diffusion/results/classifier/256x256-classes1/samples_8x256x256x3_{time_step}.npz'
-        file_data = f'/home/sclocchi/guided-diffusion/results/classifier/256x256/samples_4x256x256x3_{time_step}.npz'
-        data = np.load(file_data)
-        batch_data = process(th.tensor(data['arr_0']).permute(0,3,1,2)).to(dist_util.dev())
-        start_data = process(th.tensor(data['arr_2']).permute(0,3,1,2)).to(dist_util.dev())
 
-        class_eval_batch  = class_eval(batch_data)
-        activations_sample = copy.deepcopy(whiten_act(activations))
-        class_eval_start  = class_eval(start_data)
-        activations_start = copy.deepcopy(whiten_act(activations))
+        # Load starting data
+        name_at_time_step = f"t_{time_step}_{args.timestep_respacing}_images"
+        sample_data_dir = os.path.join(args.data_dir, name_at_time_step)
 
-        diff_activations = {}
-        cosine_sim = th.nn.CosineSimilarity(dim=1, eps=1e-8)
-        for key in activations_start.keys():
-            diff_activations[key] = {}
-            activations_sample[key] = activations_sample[key].flatten(start_dim=1)
-            activations_start[key]  = activations_start[key].flatten(start_dim=1)
-            diff_activations[key]['L2'] = th.linalg.norm(activations_sample[key] - activations_start[key], dim=1)**2
-            diff_activations[key]['L2_normalized'] = diff_activations[key]['L2'] / (th.linalg.norm(activations_sample[key], dim=1) * th.linalg.norm(activations_start[key], dim=1))
-            diff_activations[key]['cosine'] = cosine_sim(activations_sample[key], activations_start[key])
+        logger.log("creating data loader...")
+        list_sample_imgs = _list_image_files_recursively(sample_data_dir)
+        list_start_imgs  =  _list_starting_images(args.starting_data_dir, sample_data_dir)
 
+        num_samples = len(list_sample_imgs)
+        num_start   = len(list_start_imgs)
+        assert num_samples == num_start, "Number of samples and starting images must be the same"
 
-        logger.log(f"evaluated {batch_data.shape[0]} samples")
+        data_sample = load_data(
+            data_dir=sample_data_dir,
+            batch_size=args.batch_size,
+            image_size=args.image_size,
+            deterministic=True,
+            class_cond=True,
+            random_crop=False,
+            random_flip=False,
+            list_images=list_sample_imgs,
+            drop_last=False,   # It is important when batch_size < num_samples, otherwise it doesn't yield
+        )
 
-        for key1 in diff_activations.keys():
-            for key2 in diff_activations[key1].keys():
-                diff_activations[key1][key2] = diff_activations[key1][key2].cpu().numpy()
+        data_start = load_data(
+            data_dir=args.starting_data_dir,
+            batch_size=args.batch_size,
+            image_size=args.image_size,
+            deterministic=True,
+            class_cond=True,
+            random_crop=False,
+            random_flip=False,
+            list_images=list_start_imgs,
+            drop_last=False,   # It is important when batch_size < num_samples, otherwise it doesn't yield
+        )
 
-        out_act = os.path.join(logger.get_dir(), f"new_measure-class-acts_{time_step}.pk")
-        logger.log(f"saving activations to {out_act}")
-        with open(out_act, 'wb') as handle: pickle.dump(diff_activations, handle)
+        evaluated_samples  = 0
+        dict_list         = []
+        all_logits_start  = []
+        all_logits_sample = []
+        time_start = time.time()
+        while evaluated_samples < num_samples:
+            batch_start,   extra_start  = next(data_start)
+            batch_sample,  extra_sample = next(data_sample)
+
+            # labels_start = extra["y"].to(dist_util.dev())
+            batch_start   = batch_start.to(dist_util.dev())
+            batch_sample  = batch_sample.to(dist_util.dev())
+            start_names  = extra_start["img_name"]
+            sample_names = extra_sample["img_name"]
+            assert check_same_images(sample_names, start_names), "Images in sample and starting batches must be the same"
+
+            class_eval_sample  = class_eval(batch_sample)
+            activations_sample = copy.deepcopy(whiten_act(activations))
+            class_eval_start  = class_eval(batch_start)
+            activations_start = copy.deepcopy(whiten_act(activations))
+
+            diff_activations = {}
+            cosine_sim = th.nn.CosineSimilarity(dim=1, eps=1e-8)
+            for key in activations_start.keys():
+                diff_activations[key] = {}
+                activations_sample[key] = activations_sample[key].flatten(start_dim=1)
+                activations_start[key]  = activations_start[key].flatten(start_dim=1)
+                diff_activations[key]['L2'] = th.linalg.norm(activations_sample[key] - activations_start[key], dim=1)**2
+                diff_activations[key]['L2_normalized'] = diff_activations[key]['L2'] / (th.linalg.norm(activations_sample[key], dim=1) * th.linalg.norm(activations_start[key], dim=1))
+                diff_activations[key]['cosine'] = cosine_sim(activations_sample[key], activations_start[key])
+
+            dict_list.append(diff_activations)
+
+            gathered_logits_start = [
+                    th.zeros_like(class_eval_start) for _ in range(dist.get_world_size())
+                ]
+            dist.all_gather(gathered_logits_start, class_eval_start)
+            all_logits_start.extend([logits.cpu().numpy() for logits in gathered_logits_start])
+
+            gathered_logits_sample = [
+                    th.zeros_like(class_eval_sample) for _ in range(dist.get_world_size())
+                ]
+            dist.all_gather(gathered_logits_sample, class_eval_sample)
+            all_logits_sample.extend([logits.cpu().numpy() for logits in gathered_logits_sample])
+
+            sample_size = th.tensor(len(class_eval_sample)).to(dist_util.dev())
+            dist.all_reduce(sample_size, op=dist.ReduceOp.SUM)
+            evaluated_samples += sample_size.item()
+            logger.log(f"evaluated {evaluated_samples} samples in {time.time() - time_start:.1f} seconds")
+
+        # Conatenate batches
+        dictionary_act = {}
+        for key in dict_list[0].keys():
+            dictionary_act[key] = {}
+            for key2 in dict_list[0][key].keys():
+                dictionary_act[key][key2] = th.cat([dict_list[i][key][key2] for i in range(len(dict_list))], dim=0).cpu().numpy()
+
+        all_logits_start  = np.concatenate(all_logits_start, axis=0)
+        all_logits_sample = np.concatenate(all_logits_sample, axis=0)
+
+        #Save activations statistics
+        outfile = os.path.join(args.output,
+                    f'act_diff_{args.classifier_name}-t_{time_step}_{args.timestep_respacing}.pk')        
+
+        logger.log(f"saving activations to {outfile}")
+        with open(outfile, 'wb') as handle: pickle.dump(dictionary_act, handle)
+
+        #Save logits
+        outfile = os.path.join(args.output,
+                    f'logits_{args.classifier_name}-t_{time_step}_{args.timestep_respacing}.pk')
+        logger.log(f"saving logits to {outfile}")
+        with open(outfile, 'wb') as handle:
+            pickle.dump({
+                'logits_start': all_logits_start,
+                'logits_sample': all_logits_sample,
+            }, handle)
 
     # Clean up
     for hook in hooks:
@@ -136,13 +202,17 @@ def create_argparser():
     defaults = dict(
         classifier_name='resnet50',
         classifier_use_fp16=False,
-        num_samples=10000,
+        # num_samples=10000,
         batch_size=128,
-        data_dir='datasets/ILSVRC2012/validation',
         image_size=256,
+        timestep_respacing='250',
+        starting_data_dir='datasets/ILSVRC2012/validation',
+        data_dir =  os.path.join(os.getcwd(),
+                    'results',
+                    'diffused_ILSVRC2012_validation'),
         output  =  os.path.join(os.getcwd(),
-        'results',
-        'classifier_statistics')
+                    'classifier_statistics',
+                    'resnet50'),
     )
     # defaults.update(dict(
     #     step_reverse = 100,

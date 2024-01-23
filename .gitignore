@@ -15,3 +15,4 @@ datasets/ILSVRC2012
 time_iterations.sh
 *.sh
 slurm*
+classifier_statistics/*

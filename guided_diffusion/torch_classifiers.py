@@ -2,7 +2,7 @@
 from torchvision.models import resnet50, ResNet50_Weights
 import torch as th
 
-def load_classifier():
+def load_classifier(classifier_name='resnet50'):
     # img = read_image("test/assets/encode_jpeg/grace_hopper_517x606.jpg")
 
     # Step 1: Initialize model with the best available weights
