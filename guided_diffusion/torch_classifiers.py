@@ -12,7 +12,7 @@ def load_classifier(classifier_name='resnet50'):
         weights = ViT_B_16_Weights.IMAGENET1K_SWAG_E2E_V1
         model   = vit_b_16(weights=weights)
         model.eval()
-        module_names = []
+        module_names = ['encoder.layers.encoder_layer_0', 'encoder.layers.encoder_layer_1', 'encoder.layers.encoder_layer_2', 'encoder.layers.encoder_layer_3', 'encoder.layers.encoder_layer_4', 'encoder.layers.encoder_layer_5', 'encoder.layers.encoder_layer_6', 'encoder.layers.encoder_layer_7', 'encoder.layers.encoder_layer_8', 'encoder.layers.encoder_layer_9', 'encoder.layers.encoder_layer_10', 'encoder.layers.encoder_layer_11', 'heads']
     else:
         raise f"Classifier {classifier_name} not implemented"
     

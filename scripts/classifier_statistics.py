@@ -30,7 +30,7 @@ def main():
     dist_util.setup_dist()
     logger.configure(dir=args.output)
 
-    classifier, preprocess, module_names = load_classifier()
+    classifier, preprocess, module_names = load_classifier(args.classifier_name)
     classifier.to(dist_util.dev())
     if args.classifier_use_fp16:
         classifier.convert_to_fp16()
@@ -47,14 +47,18 @@ def main():
     def get_activation(name):
         def hook(model, input, output):
             act = output.detach()
-            if act.ndim == 4:
+            if act.ndim == 4: ## BCHW format for conv layers
                 act_size = act.shape[0] * act.shape[2] * act.shape[3]
                 act_mean = act.sum((0, 2, 3), keepdim=True)
                 act_var  = (act**2).sum((0, 2, 3), keepdim=True)
-            elif act.ndim == 2:
+            elif act.ndim == 2: ## BN format for fc layers
                 act_size = act.shape[0] * act.shape[1]
                 act_mean = act.sum((0, 1), keepdim=True)
                 act_var  = (act**2).sum((0, 1), keepdim=True)
+            elif act.ndim == 3: ## BTC for transformer layers
+                act_size = act.shape[0] * act.shape[2]
+                act_mean = act.sum((0, 2), keepdim=True)
+                act_var  = (act**2).sum((0, 2), keepdim=True)
             else:
                 raise ValueError(f"unexpected activation shape: {act.shape}")
             if name in activations_mean:
@@ -150,7 +154,6 @@ def create_argparser():
         data_dir='datasets/ILSVRC2012/validation',
         image_size=256,
         output  =  os.path.join(os.getcwd(),
-        'results',
         'classifier_statistics')
     )
     # defaults.update(dict(
