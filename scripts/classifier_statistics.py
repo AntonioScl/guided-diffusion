@@ -15,6 +15,7 @@ from guided_diffusion.script_util import (
 )
 from guided_diffusion.image_datasets import load_data
 from guided_diffusion.torch_classifiers import load_classifier
+import time
 
 # # Step 4: Use the model and print the predicted category
 # prediction = model(batch).squeeze(0).softmax(0)
@@ -26,6 +27,7 @@ from guided_diffusion.torch_classifiers import load_classifier
 
 def main():
     args = create_argparser().parse_args()
+    args.output = os.path.join(args.output, args.classifier_name)
 
     dist_util.setup_dist()
     logger.configure(dir=args.output)
@@ -56,9 +58,9 @@ def main():
                 act_mean = act.sum((0, 1), keepdim=True)
                 act_var  = (act**2).sum((0, 1), keepdim=True)
             elif act.ndim == 3: ## BTC for transformer layers
-                act_size = act.shape[0] * act.shape[2]
-                act_mean = act.sum((0, 2), keepdim=True)
-                act_var  = (act**2).sum((0, 2), keepdim=True)
+                act_size = act.shape[0] * act.shape[1]
+                act_mean = act.sum((0, 1), keepdim=True)
+                act_var  = (act**2).sum((0, 1), keepdim=True)
             else:
                 raise ValueError(f"unexpected activation shape: {act.shape}")
             if name in activations_mean:
@@ -85,12 +87,14 @@ def main():
         class_cond=True,
         random_crop=False,
         random_flip=False,
+        drop_last=False,
     )
 
     correct = 0
     correct_top5 = 0
     total = 0
     # num_samples = 1000
+    time_start = time.time()
     while total < args.num_samples:
         batch_data, extra = next(data)
         labels_data = extra["y"].to(dist_util.dev())
@@ -105,7 +109,7 @@ def main():
         # Update correct_top5 count
         correct_top5 += predicted.eq(labels_data.view(-1, 1).expand_as(predicted)).sum().item()
 
-        logger.log(f"evaluated {total} samples")
+        logger.log(f"evaluated {total} samples in {time.time() - time_start:.2f} seconds")
 
     # Calculate accuracies
     accuracy = 100 * correct / total
@@ -156,18 +160,7 @@ def create_argparser():
         output  =  os.path.join(os.getcwd(),
         'classifier_statistics')
     )
-    defaults.update(dict(
-        output = os.path.join(defaults['output'], defaults['classifier_name']),
-    ))
-    # defaults.update(dict(
-    #     step_reverse = 100,
-    #     classifier_path = 'models/64x64_classifier.pt',
-    #     data_dir =  'datasets/imagenet64_startingImgs',
-    #     output  =  os.path.join(os.getcwd(),
-    #          'results',
-    #          'forw_back',
-    #          datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S-%f")),
-    # ))
+
     parser = argparse.ArgumentParser()
     add_dict_to_argparser(parser, defaults)
     return parser
