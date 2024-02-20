@@ -1,11 +1,16 @@
 # from torchvision.io import read_image
-from torchvision.models import resnet50, ResNet50_Weights, vit_b_16, ViT_B_16_Weights
+from torchvision.models import resnet50, ResNet50_Weights, vit_b_16, ViT_B_16_Weights, wide_resnet50_2, Wide_ResNet50_2_Weights
 import torch as th
 
 def load_classifier(classifier_name='resnet50'):
     if classifier_name == 'resnet50':
         weights = ResNet50_Weights.DEFAULT
         model = resnet50(weights=weights)
+        model.eval()
+        module_names = ['layer1.0', 'layer1.1', 'layer1.2', 'layer2.0', 'layer2.1', 'layer2.2', 'layer2.3', 'layer3.0', 'layer3.1', 'layer3.2', 'layer3.3', 'layer3.4', 'layer3.5', 'layer4.0', 'layer4.1', 'layer4.2', 'fc']
+    elif classifier_name == 'wideresnet50':
+        weights = Wide_ResNet50_2_Weights.DEFAULT
+        model = wide_resnet50_2(weights=weights)
         model.eval()
         module_names = ['layer1.0', 'layer1.1', 'layer1.2', 'layer2.0', 'layer2.1', 'layer2.2', 'layer2.3', 'layer3.0', 'layer3.1', 'layer3.2', 'layer3.3', 'layer3.4', 'layer3.5', 'layer4.0', 'layer4.1', 'layer4.2', 'fc']
     elif classifier_name == 'vit_b_16':
