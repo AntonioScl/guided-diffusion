@@ -55,13 +55,14 @@ def load_data(
         # Assume classes are the first part of the filename,
         # before an underscore.
         class_names = [bf.basename(path).split("_")[0] for path in all_files]
-        if 'ILSVRC2012' in data_dir and len(set(class_names)) <1000: 
+        if (('ILSVRC2012' in data_dir) or ('tiny-imagenet' in data_dir)) and len(set(class_names)) <1000: 
             sorted_classes = {x: i for i, x in enumerate(sorted(set(IMAGENET_CLASSES)))}
-        elif 'tiny-imagenet' in data_dir and len(set(class_names)) <200: 
-            sorted_classes = {x: i for i, x in enumerate(sorted(set(TINY_IMAGENET_CLASSES)))}
+        # elif 'tiny-imagenet' in data_dir and len(set(class_names)) <200: 
+        #     sorted_classes = {x: i for i, x in enumerate(sorted(set(TINY_IMAGENET_CLASSES)))}
         else:
             sorted_classes = {x: i for i, x in enumerate(sorted(set(class_names)))}
         classes = [sorted_classes[x] for x in class_names]
+        
     dataset = ImageDataset(
         image_size,
         all_files,
