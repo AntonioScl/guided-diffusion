@@ -16,3 +16,5 @@ time_iterations.sh
 *.sh
 slurm*
 classifier_statistics/*
+correlations_measurements/*
+notebooks/*
