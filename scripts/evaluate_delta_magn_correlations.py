@@ -41,6 +41,9 @@ def main():
     print(f"device: {device}")
     logger.configure(dir=args.output)
 
+    if args.spin_like:
+        logger.log("Computing correlations for spin-like data")
+
     # Time steps to evaluate
     for time_step in args.time_series:
 
@@ -107,6 +110,11 @@ def main():
             delta_x = batch_sample - batch_start
             delta_x = (delta_x**2).sum(dim=1).sqrt()
 
+            if args.spin_like:
+                delta_x = delta_x.flatten(start_dim=1)
+                medians = th.median(delta_x, dim=-1, keepdim=True).values
+                delta_x = 2*((delta_x > medians).float() - 0.5)
+
             C_batch, m_batch = compute_correlations(delta_x)
 
             corr += C_batch
@@ -127,11 +135,16 @@ def main():
         mean = mean.reshape(dim, dim)
 
         # Save correlations
-
-        outfile = os.path.join(
-            args.output,
-            f"correlations_deltaX-t_{time_step}_{args.timestep_respacing}-magnitude.pk",
-        )
+        if args.spin_like:
+            outfile = os.path.join(
+                args.output,
+                f"correlations_deltaX-t_{time_step}_{args.timestep_respacing}-spin.pk",
+            )
+        else:
+            outfile = os.path.join(
+                args.output,
+                f"correlations_deltaX-t_{time_step}_{args.timestep_respacing}-magnitude.pk",
+            )
         logger.log(f"saving correlations to {outfile}")
 
         with open(outfile, "wb") as handle:
@@ -159,6 +172,7 @@ def create_argparser():
         starting_data_dir="datasets/ILSVRC2012/validation",
         data_dir=os.path.join(os.getcwd(), "results", "diffused_ILSVRC2012_validation"),
         output=os.path.join(os.getcwd(), "correlations_measurements"),
+        spin_like=False,
     )
 
     parser = argparse.ArgumentParser()

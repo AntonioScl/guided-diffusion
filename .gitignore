@@ -19,3 +19,4 @@ slurm*
 classifier_statistics/*
 correlations_measurements/*
 notebooks/*
+corr_function.run
