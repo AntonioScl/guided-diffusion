@@ -12,6 +12,7 @@ diffusion_commands.sh
 datasets/upsampling/*
 smooth_upsample.sh
 datasets/ILSVRC2012
+datasets/diffused_ILSVRC2012_validation/*
 time_iterations.sh
 *.sh
 slurm*
