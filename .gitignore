@@ -18,5 +18,8 @@ time_iterations.sh
 slurm*
 classifier_statistics/*
 correlations_measurements/*
-notebooks/*
+# notebooks/*
 corr_function.run
+Wavelet_coefficients/*
+Fourier_coefficients/*
+Clip_correlations/*
