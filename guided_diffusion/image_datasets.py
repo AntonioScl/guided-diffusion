@@ -24,6 +24,7 @@ def load_data(
     random_flip=True,
     list_images=None,
     drop_last=True,
+    preprocess_fn=None,
 ):
     """
     For a dataset, create a generator over (images, kwargs) pairs.
@@ -43,6 +44,8 @@ def load_data(
     :param random_crop: if True, randomly crop the images for augmentation.
     :param random_flip: if True, randomly flip the images for augmentation.
     :param list_images: if not None, a list of image paths to use. If None, all in data_dir.
+    :param drop_last: if True, drop the last batch if it is smaller than batch_size.
+    :param preprocess_fn: if not None, a function that takes a PIL image and overrides the default preprocessing.
     """
     if not data_dir:
         raise ValueError("unspecified data directory")
@@ -71,6 +74,7 @@ def load_data(
         num_shards=MPI.COMM_WORLD.Get_size(),
         random_crop=random_crop,
         random_flip=random_flip,
+        preprocess_fn=preprocess_fn,
     )
     if deterministic:
         loader = DataLoader(
@@ -157,6 +161,7 @@ class ImageDataset(Dataset):
         num_shards=1,
         random_crop=False,
         random_flip=True,
+        preprocess_fn=None,
     ):
         super().__init__()
         self.resolution = resolution
@@ -164,32 +169,43 @@ class ImageDataset(Dataset):
         self.local_classes = None if classes is None else classes[shard:][::num_shards]
         self.random_crop = random_crop
         self.random_flip = random_flip
+        self.preprocess_fn = preprocess_fn
 
     def __len__(self):
         return len(self.local_images)
 
     def __getitem__(self, idx):
         path = self.local_images[idx]
-        with bf.BlobFile(path, "rb") as f:
-            pil_image = Image.open(f)
-            pil_image.load()
-        pil_image = pil_image.convert("RGB")
-
-        if self.random_crop:
-            arr = random_crop_arr(pil_image, self.resolution)
-        else:
-            arr = center_crop_arr(pil_image, self.resolution)
-
-        if self.random_flip and random.random() < 0.5:
-            arr = arr[:, ::-1]
-
-        arr = arr.astype(np.float32) / 127.5 - 1
-
+        # additional info of the image
         out_dict = {}
         if self.local_classes is not None:
             out_dict["y"] = np.array(self.local_classes[idx], dtype=np.int64)
         out_dict["img_name"]  = os.path.split(path)[-1] 
-        return np.transpose(arr, [2, 0, 1]), out_dict
+
+        # load the image
+        with bf.BlobFile(path, "rb") as f:
+            pil_image = Image.open(f)
+            pil_image.load()
+
+        if self.preprocess_fn is not None: 
+            # Custom preprocessing
+            arr = self.preprocess_fn(pil_image)
+        else: 
+            # Default preprocessing
+            pil_image = pil_image.convert("RGB")
+
+            if self.random_crop:
+                arr = random_crop_arr(pil_image, self.resolution)
+            else:
+                arr = center_crop_arr(pil_image, self.resolution)
+
+            if self.random_flip and random.random() < 0.5:
+                arr = arr[:, ::-1]
+
+            arr = arr.astype(np.float32) / 127.5 - 1
+            arr = np.transpose(arr, [2, 0, 1])
+
+        return arr, out_dict
 
 
 def center_crop_arr(pil_image, image_size):
