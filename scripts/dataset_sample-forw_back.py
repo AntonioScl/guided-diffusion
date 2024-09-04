@@ -31,6 +31,9 @@ import time
 
 def main():
     args = create_argparser().parse_args()
+    if args.seed_trajectory is not None:
+        # modify output directory to include seed_trajectory
+        args.output = args.output + f"-seed_{args.seed_trajectory}"
 
     dist_util.setup_dist()
     output_images = os.path.join(
@@ -79,6 +82,11 @@ def main():
     # all_noisy_images = []
     generated_samples = 0
     # batch_samples = []
+    g_forw = th.Generator(device=dist_util.dev())
+    g_forw.manual_seed(args.seed_trajectory) if args.seed_trajectory is not None else g_forw.seed()
+    g_back = th.Generator()
+    g_back.manual_seed(args.seed_trajectory) if args.seed_trajectory is not None else g_back.seed()
+        
     time_start = time.time()
     while generated_samples < num_samples:
         batch_start, extra = next(data_start)
@@ -92,10 +100,12 @@ def main():
             dist_util.dev()
         )
         # t_reverse = t_reverse.to(dist_util.dev())
+        # noise = th.randn_like(batch_start, device=dist_util.dev(), generator=g)
+        noise = th.randn(batch_start.shape, device=dist_util.dev(), generator=g_forw)
         batch_noisy = (
-            diffusion.q_sample(batch_start, t_reverse)
+            diffusion.q_sample(batch_start, t_reverse, noise=noise)
             if args.step_reverse < int(args.timestep_respacing)
-            else th.randn(batch_start.shape, device=dist_util.dev())
+            else noise
         )
         logger.log("completed forward diffusion...")
 
@@ -119,6 +129,7 @@ def main():
             noise=batch_noisy,
             clip_denoised=args.clip_denoised,
             model_kwargs=model_kwargs,
+            generator=g_back,
         )
         logger.log("completed backward diffusion...")
         sample = ((sample + 1) * 127.5).clamp(0, 255).to(th.uint8)
@@ -237,6 +248,7 @@ def create_argparser():
             ),
             num_per_class=10,
             num_classes=10,
+            seed_trajectory=0,
         )
     )
     parser = argparse.ArgumentParser()
@@ -246,6 +258,10 @@ def create_argparser():
     assert parser.parse_args().step_reverse <= int(
         parser.parse_args().timestep_respacing
     ), "step_reverse must be smaller than or equal to timestep_respacing"
+
+    # if parser.parse_args().seed_trajectory is not None:
+    #     # modify output directory to include seed_trajectory
+    #     parser.parse_args().output = parser.parse_args().output + f"-seed_{parser.parse_args().seed_trajectory}"
 
     return parser
 
