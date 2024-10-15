@@ -18,7 +18,7 @@ from guided_diffusion.script_util import (
     add_dict_to_argparser,
     args_to_dict,
 )
-from guided_diffusion.image_datasets import load_data, _list_images_per_classes
+from guided_diffusion.image_datasets import load_data, _list_images_per_classes, _list_image_files_recursively
 import datetime
 import pickle
 
@@ -36,10 +36,7 @@ def main():
         args.output = args.output + f"-seed_{args.seed_trajectory}"
 
     dist_util.setup_dist()
-    output_images = os.path.join(
-        args.output, f"t_{args.step_reverse}_{args.timestep_respacing}_images"
-    )
-    logger.configure(dir=output_images)
+    logger.configure(dir=args.output)
 
     logger.log("creating model and diffusion...")
     model, diffusion = create_model_and_diffusion(
@@ -55,26 +52,65 @@ def main():
 
     # output_images = os.path.join(logger.get_dir(), f"t_{args.step_reverse}_{args.timestep_respacing}_images")
 
-    logger.log("creating data loader...")
-    list_images = _list_images_per_classes(
-        args.data_dir, args.num_per_class, args.num_classes, output_images
-    )
-    num_samples = len(list_images)
-    data_start = load_data(
-        data_dir=args.data_dir,
-        batch_size=args.batch_size,
-        image_size=args.image_size,
-        deterministic=True,
-        class_cond=True,
-        random_crop=False,
-        random_flip=False,
-        list_images=list_images,
-        drop_last=False,  # It is important when batch_size < num_samples, otherwise it doesn't yield
-    )
+    if args.all_data:
+        make_dataloader = False
+        logger.log("creating data loader...")
+        list_images = _list_image_files_recursively(args.data_dir)
+        data_start = load_data(
+            data_dir=args.data_dir,
+            batch_size=args.batch_size,
+            image_size=args.image_size,
+            deterministic=True,
+            class_cond=True,
+            random_crop=False,
+            random_flip=False,
+            list_images=list_images,
+            drop_last=False,
+        )
+        num_samples = len(list_images)
+    else:
+        make_dataloader = True
+    
 
-    # num_samples = len(num_samples)
-    logger.log(f"creating {num_samples} samples...")
+    for step_reverse in args.time_series:
+        logger.log(f"step_reverse: {step_reverse}")
+        output_images = os.path.join(
+            args.output,
+            f"t_{step_reverse}_{args.timestep_respacing}_images",
+        )
+        logger.configure(dir=output_images)
 
+        if make_dataloader:
+            logger.log("creating data loader...")
+            list_images = _list_images_per_classes(
+                args.data_dir, args.num_per_class, args.num_classes, output_images
+            )
+            data_start = load_data(
+                data_dir=args.data_dir,
+                batch_size=args.batch_size,
+                image_size=args.image_size,
+                deterministic=True,
+                class_cond=True,
+                random_crop=False,
+                random_flip=False,
+                list_images=list_images,
+                drop_last=False,  # It is important when batch_size < num_samples, otherwise it doesn't yield
+            )
+            num_samples = len(list_images)
+
+        logger.log(f"creating {num_samples} samples...")
+
+        args.step_reverse = step_reverse
+        sample_and_save(
+            model, diffusion, data_start, num_samples, output_images, args
+        )
+
+    logger.log("done")
+    dist.barrier()
+    dist.destroy_process_group()
+
+
+def sample_and_save(model, diffusion, data_start, num_samples, output_images, args):
     logger.log("sampling...")
     # all_images = []
     # all_labels = []
@@ -241,23 +277,31 @@ def create_argparser():
     defaults.update(model_and_diffusion_defaults())
     defaults.update(
         dict(
-            step_reverse=10,
+            # step_reverse=10,
             data_dir="datasets/ILSVRC2012/validation",
             output=os.path.join(
                 os.getcwd(), "results", "diffused_ILSVRC2012_validation"
             ),
             num_per_class=10,
             num_classes=10,
+            all_data=False, # if True, use all data in the dataset and ignore num_per_class and num_classes
             seed_trajectory=0,
         )
     )
     parser = argparse.ArgumentParser()
     add_dict_to_argparser(parser, defaults)
+    parser.add_argument(
+        "--time_series",
+        nargs="+",
+        type=int,
+        default=[25, 50, 75, 100, 125, 150, 175, 200, 225, 250],
+        help="Time steps for the step reverse. Pass like: --time_series 25 50 100",
+    )
 
-    assert parser.parse_args().step_reverse >= 0, "step_reverse must be positive"
-    assert parser.parse_args().step_reverse <= int(
-        parser.parse_args().timestep_respacing
-    ), "step_reverse must be smaller than or equal to timestep_respacing"
+    # assert parser.parse_args().step_reverse >= 0, "step_reverse must be positive"
+    # assert parser.parse_args().step_reverse <= int(
+    #     parser.parse_args().timestep_respacing
+    # ), "step_reverse must be smaller than or equal to timestep_respacing"
 
     # if parser.parse_args().seed_trajectory is not None:
     #     # modify output directory to include seed_trajectory
